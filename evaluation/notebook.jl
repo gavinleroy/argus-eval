@@ -308,10 +308,7 @@ OFFICIAL_STUDY_VERSION = 3
 """
 Filter the provided DataFrame by participants involved in version `version` of the study.
 """
-pick_version(df) = filter(
-	row -> !ismissing(row.version) && row.version == version, 
-	df
-)
+pick_version = filt(row -> !ismissing(row.version) && row.version == version)
 
 # ╔═╡ edefac7e-d9b7-4302-8b53-b451d8115498
 begin 
@@ -355,20 +352,6 @@ N = unique(all_tasks.id) |> length
 Markdown.parse("""
 ## Study V`$version` (N=`$N`)
 """)
-
-# ╔═╡ 4d093099-7ed3-47d7-ab3a-b36160dc1a99
-Z_IDX = 1.96
-
-# ╔═╡ 343a317b-c669-4dbc-bb07-d5a00731997e
-"""
-Following [this online article](https://www.graphpad.com/support/faq/the-modified-wald-method-for-computing-the-confidence-interval-of-a-proportion/), the best way to compute the 95% confidence interval for a proportion is the “modified Wald” method.
-"""
-function modified_wald(numerator::Number, denominator::Number)
-	z = 1.96 # Assuming a 95% confidence interval
-	p′ = (numerator + (z^2 / 2)) / (denominator + z^2)
-	offset = z * √((p′ * (1 - p′)) / (denominator * z^2))
-	return (p′ - offset, p′ + offset)
-end
 
 # ╔═╡ 3df5db7f-03e9-44c7-a0de-cb58e44b1688
 md"""
@@ -529,7 +512,10 @@ outcome_probability(df, counting; groupby=:has_argus) = (
 	|> grouped(groupby)
 	|> comb(counting => sum => :count, nrow)
 	|> pipe(Cols(:count, :nrow) => (./) => :percent)
-	|> pipe(Cols(:count, :nrow) => ByRow(modified_wald) => :error)
+	|> pipe(Cols(:count, :nrow, :percent) => ByRow((c,nr,p) -> begin
+		lower,upper = confint(BinomialTest(c, nr))
+		return p - lower, upper - p
+	end) => :confint)	
 )
 
 # ╔═╡ a2cd17d9-6db1-41eb-b514-20d08ae10eff
@@ -674,11 +660,7 @@ lm(
 		xlabel="Years with Rust", 
 		ylabel="% Correct", 
 		ylims=(0,1),
-# 		yerror=
-# 			KruskalWallisTest(
-# 	no_argus(all_tasks).localizedint,
-# 	with_argus(all_tasks).localizedint
-# ),
+		yerror=:confint,
 		title="Success by Rust Experience",
 		legend=false
 	)
@@ -722,14 +704,14 @@ md"""
 	outcome_probability(all_tasks, :is_success)
 	|> pipe(:has_argus => ByRow(argus_label) => :has_argus)
 	|> sort_by(:has_argus)
-	|> @df groupedbar(
+	|> @df bar(
+		:has_argus,
 		:percent, 
-		group=:has_argus,
+		yerror=:confint,
 		ylims=(0,1),
 		title="Success Rate",
 		ylabel="% Correct",
 		xticks=false,
-		yerror=:error,
 	)
 )
 
@@ -743,7 +725,7 @@ md"""
 		:percent,
 		group=:has_argus,
 		ylims=(0, 1),
-		yerror=:error,
+		yerror=:confint,
 		ylabel="% Correct",
 		xlabel="Library Kind",
 		title="Success by Library Kind"
@@ -760,7 +742,7 @@ md"""
 		:percent,
 		group=:has_argus,
 		ylims=(0, 1),
-		yerror=:error,
+		yerror=:confint,
 		ylabel="% Correct",
 		xlabel="Error Kind",
 		title="Success by Error Kind"
@@ -777,7 +759,7 @@ md"""
 		:percent, 
 		group=:has_argus,
 		ylims=(0, 1),
-		yerror=:error,
+		yerror=:confint,
 		xtickfontsize=6,
 		ylabel="% Correct",
 		xlabel="Task",
@@ -823,22 +805,17 @@ md"""
 ## Time Localizing
 """
 
-# ╔═╡ 97f29cdc-47f9-4c23-a0f8-0b0c8b07edc4
-md"""
-**TODO ERROR BARS**
-"""
-
 # ╔═╡ ddccad5c-f02f-4591-b1da-9365a868922e
 (
 	outcome_probability(all_tasks, :did_localize)
 	|> mp(:has_argus, argus_label)
 	|> sort_by(:has_argus)
-	|> @df groupedbar( 
+	|> @df bar( 
+		:has_argus,
 		:percent,
-		group=:has_argus,
 		ylims=(0,1),
 		ylabel="% Fault Localized",
-		#yerror=:error,
+		yerror=:confint,
 		xticks=false,
 		title="Fault Localization",
 	)
@@ -924,7 +901,7 @@ end
 		:percent,
 		group=:has_argus,
 		ylims=(0, 1),
-		yerror=:error,
+		yerror=:confint,
 		ylabel="% Localized",
 		xlabel="Error Kind",
 		title="Localization Success by Error Kind"
@@ -3036,7 +3013,7 @@ version = "1.4.1+1"
 # ╟─93a5e415-4b56-4edd-b59c-c00ce4be8612
 # ╠═7c3539da-636b-47f6-a310-7b26a54a27af
 # ╠═0cd2f4a3-913d-42c3-92c7-155f9fdf0d30
-# ╠═33d08d01-6b72-4a5f-a299-d1294c5fab60
+# ╟─33d08d01-6b72-4a5f-a299-d1294c5fab60
 # ╟─bef8a611-9363-4f12-91fc-32e80e215765
 # ╟─08e052d8-069f-4b0d-ba73-5e73337f42ba
 # ╟─75ed61cd-36e8-4d89-9f94-e8a6d1a7a257
@@ -3072,8 +3049,6 @@ version = "1.4.1+1"
 # ╟─f3164cd7-9970-4b28-9585-f52b6cc66d3f
 # ╟─fdb2b9af-d1db-49d6-96de-7cee8a99784c
 # ╟─7f4591ea-ec7a-4d9a-a421-20fb4b8b977a
-# ╟─4d093099-7ed3-47d7-ab3a-b36160dc1a99
-# ╠═343a317b-c669-4dbc-bb07-d5a00731997e
 # ╟─3df5db7f-03e9-44c7-a0de-cb58e44b1688
 # ╠═8b3f9d55-a033-408a-b6e4-60ff36bc9a3f
 # ╠═a1fb7956-cbd4-472a-ac45-bc69b00441b2
@@ -3125,8 +3100,7 @@ version = "1.4.1+1"
 # ╟─4082c5c8-dafb-41ea-aa69-7bde33b7fd1a
 # ╟─75d602a7-177e-44e3-a9b1-a3deceec355f
 # ╟─e57f0e48-dc63-4870-a8dd-530e977d7c79
-# ╟─97f29cdc-47f9-4c23-a0f8-0b0c8b07edc4
-# ╟─ddccad5c-f02f-4591-b1da-9365a868922e
+# ╠═ddccad5c-f02f-4591-b1da-9365a868922e
 # ╟─cfb1b551-125c-492c-9148-b02fc53cb454
 # ╟─cdeff58b-cc7f-47f8-b420-795a3a8c3f98
 # ╟─c545b3b2-3a65-4083-b2ea-66381066237a
