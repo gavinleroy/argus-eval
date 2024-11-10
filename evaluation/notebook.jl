@@ -17,52 +17,54 @@ end
 # ╔═╡ 7c3539da-636b-47f6-a310-7b26a54a27af
 using Printf: @sprintf, @printf
 
+# ╔═╡ c9a9f595-744c-46d5-8faf-ae655a1b78a2
+using PlutoLinks: @ingredients
+
 # ╔═╡ 0cd2f4a3-913d-42c3-92c7-155f9fdf0d30
-using StatsKit, PlutoUI, StatsPlots, DataFrames, HypothesisTests
+using StatsKit, PlutoUI, StatsPlots, DataFrames, HypothesisTests, TimeSeries
 
 # ╔═╡ 93a5e415-4b56-4edd-b59c-c00ce4be8612
 md"""
 # Argus Evaluation
 """
 
-# ╔═╡ 33d08d01-6b72-4a5f-a299-d1294c5fab60
+# ╔═╡ 1d2b6490-bc1e-4c68-8915-55fd38e79b95
+md"""
+❗ I need to figure out how Julia modules interact with Pluto...I wanted to move helper functions and annoying clutter to the `EvalUtil.jl` file. This produced more chaos than I expected. When in doubt, prefix a function with the “namespace” `λ.`.
 """
-Load a CEL CSV file from the directory. All CSVs in this module are prefixed by `cel-` and placed in the `data/` directory. This function adds those two things to ensure that you're loading CSVs properly.
+
+# ╔═╡ a85aa103-5f00-4d3a-808a-be678b64500a
+md"""
+*Note,* for a really annoying reason, Pluto isn't good at importing other Pluto notebooks. The best thing to do right now is to evaluate the file, saving the output in this variable λ as if it *were* a module. The only downside is that you can't `import` all symbols from the module, so we have to qualify things with ‘λ.’
 """
-cel(fn) = CSV.read(@sprintf("./data/CEL-Trait-Debugging - %s.csv", fn), DataFrame)
 
-# ╔═╡ bef8a611-9363-4f12-91fc-32e80e215765
-drop_emails(frame) = select(frame, Not("Email Address"))
+# ╔═╡ 76edb6c5-01aa-4457-b340-876663bd91ac
+λ = @ingredients("./EvalUtil.jl")
 
-# ╔═╡ 08e052d8-069f-4b0d-ba73-5e73337f42ba
-experience_level(v::Missing) = 0
+# ╔═╡ b9044b0e-543c-415a-b8e1-081cd80479a6
+form = cel("Responses");
 
-# ╔═╡ 75ed61cd-36e8-4d89-9f94-e8a6d1a7a257
-experience_level(v) = 
-	if v == "Light Experience"  
-		1
-	elseif v == "Significant Experience" 
-		10
-	else 0 end
+# ╔═╡ 0736719d-6e17-47d0-bb4c-6c8e78bb2bf8
+versions = cel("Meta");
 
-# ╔═╡ 37d4055b-c0e4-4262-948a-9530b9d9376e
-type_class_experience(lexp, hexp) = experience_level(lexp) + experience_level(hexp)
+# ╔═╡ 8e2742e2-2bb7-404a-81c5-8694a21b261f
+tasks = read_tasks();
 
-# ╔═╡ a867b826-7402-4d6f-a938-a6191d612750
-task_kind(task) = 
-	if task in ["brew-1", "galaxy-3"] 
-	  :typestate 
-	elseif task in ["brew-2", "galaxy-2"] 
-	  :addbound
-	else :tree end
+# ╔═╡ 0cc9668f-5f3a-4d95-8b83-5cdf356c6dd3
+md"""
+## Inter-Rater Reliability
+"""
 
-# ╔═╡ bc8d37ad-4b9f-4005-b98b-f54404c6b5fa
-begin
-	form = cel("Responses")
-	versions = cel("Meta")
-	tasks = map(i -> @sprintf("Task%d", i) |> cel, 1:4)
-end; nothing
+# ╔═╡ 3f2ceb2a-a14a-4502-8bf0-2d311d4d4062
+"""
+The participant IDs used for IRR.
+"""
+IRR_IDS = [19, 74, 62, 38, 50]
 
+# ╔═╡ 60e21bd4-779e-440b-8a7a-805eca8690c5
+md"""
+## Study Meta Data
+"""
 
 # ╔═╡ f1ffa2d0-0449-4f28-af5e-25399e5eef99
 SIGNED_UP = length(versions.id)
@@ -72,100 +74,6 @@ DID_NOT_PARTICIPATE = count(ismissing, versions.version)
 
 # ╔═╡ 1dece7d4-b4a4-4c1d-a5b2-81f1e14716c0
 PARTICIPATION_RATE = (SIGNED_UP - DID_NOT_PARTICIPATE) / SIGNED_UP
-
-# ╔═╡ d7e74259-ae1b-44f9-b9ca-02f65ea3ea34
-equivalent_tasks = [
-	("greenhouse-0", "galaxy-0"),
-	("greenhouse-1", "galaxy-3")
-]
-
-# ╔═╡ e1e9d18b-82ef-4ad0-b7e8-3dc656e55c56
-real_world_tasks = [
-	("bevy-0", :bevy),
-	("diesel-0", :diesel),
-	("axum-0", :axum)
-]
-
-# ╔═╡ a3b55790-db8a-40d7-b701-ab300b477dbf
-tree_problems = [
-	"bevy-0", "greenhouse-0", "galaxy-0", "axum-0", "diesel-0"
-]
-
-# ╔═╡ e20ca3a8-e467-4218-9be9-62924495d5f8
-real_world_problems = ["bevy-0", "diesel-0", "axum-0"]
-
-# ╔═╡ d6ba8b51-6402-4ce4-938f-cb635a2e3525
-TIME_ZERO = Time("00:00:00")
-
-# ╔═╡ 483257bc-3d80-47c7-85a5-d022bb0a1fe2
-"""
-Provided the task `name`, and a developers experience using `Axum`, `Diesel`, and `Bevy`, return whether or not the developer was familiar with the crate used in the task.
-"""
-function is_familiar(name::AbstractString, axum::Bool, bevy::Bool, diesel::Bool)::Bool
-	(name == "bevy-0" && bevy) || (name == "axum-0" && axum) || (name == "diesel-0" && diesel)
-end
-
-# ╔═╡ 7f5c29bd-39e6-4e78-98fb-4cb8c1547ff1
-"""
-Determine whether or not users are familiar with crate `s`. The result is written to a new column with symbol name `lowercase(s)`.
-"""
-function crate_familiarity(df, s::String)
-	sy = lowercase(s) |> Symbol
-    DataFrames.transform(df, r"Indicate which" => ByRow(h -> !ismissing(h) && contains(h, s)) => sy)
-end
-
-# ╔═╡ f6133a15-f1a1-4d69-9e04-7f96667ccdb2
-crate_familiarity(s::String) = df -> crate_familiarity(df, s)
-
-# ╔═╡ 5cc19bfe-a550-4151-bf04-d40ad66e9909
-"""
-Constant representing the number of years programming in Rust that we deem *acceptable* for someone to be considered an expert.
-"""
-EXPERT_RUST_EXP = 3
-
-# ╔═╡ dc49af3b-c104-42e0-a98e-15b2bc3629b0
-"""
-The maximum amount of time participants were given to work on a single task.
-"""
-MAX_TASK_DURATION = Minute(10)
-
-# ╔═╡ 54c941cc-51b5-4bf8-b971-33cffcaee05a
-md"""
-Helper functions for working with a `DataFrame` functionally.
-"""
-
-# ╔═╡ f7ac2cdb-64a0-4b12-822a-117d7aae3a16
-begin
-	pipe(ARGS...) = f -> DataFrames.transform(f, ARGS...)
-	comb(ARGS...) = f -> DataFrames.combine(f, ARGS...)
-	grouped(ARGS...) = f -> DataFrames.groupby(f, ARGS...)
-	ftask(s::AbstractString) = df -> filter(row -> row.name == s, df)
-    filt(func) = df -> DataFrames.filter(func, df)
-	sort_by(v) = df -> sort(df, v)
-	mp(s, f) = pipe(s => ByRow(f) => s)
-	with_argus = filt(row -> row.has_argus)
-	no_argus = filt(row -> !row.has_argus)
-end; nothing
-
-# ╔═╡ fc5520a3-9737-44d6-9b4b-1aa00b2bb0dc
-md"""
-Here are some helpers to generate plot labels from a given frame attribute.
-"""
-
-# ╔═╡ 151709aa-fde5-4c2b-a75b-58daa99addc8
-begin
-	argus_label(b::Bool) = if b "With Argus" else "Without Argus" end
-	rw_label(b::Bool) = if b "Real" else "Synthetic" end
-	ts_label(b::Bool) = if b "Typestate" else "Tree" end
-	familiar_label(b::Bool) = if b "Familiar" else "Not Familiar" end
-	async_label(b::Bool) = if b "Async Exp" else "No Async Exp" end
-	function task_label(s::AbstractString)
-		swapit(s::AbstractString) = if s == "galaxy" "space" elseif s == "greenhouse" "brew" else s end
-		tks = map(swapit, split(s, "-"))
-		caps = map(uppercasefirst, tks)
-		return join(caps, " ")
-	end
-end; nothing
 
 # ╔═╡ 6fa2360d-cae0-4d1d-83fb-9cca1d471514
 md"""
@@ -258,9 +166,9 @@ study_info(df) = (
 	|> pipe(:is_tree => ByRow((!)) => :is_typestate)
 
 	# Make column for familiarity with a crate
-	|> crate_familiarity("Axum")
-	|> crate_familiarity("Bevy")
-	|> crate_familiarity("Diesel")
+	|> λ.crate_familiarity("Axum")
+	|> λ.crate_familiarity("Bevy")
+	|> λ.crate_familiarity("Diesel")
 	
  	# Is the developer familiar with the underlying crate?
  	|> pipe(Cols(:name, :axum, :bevy, :diesel) => ByRow(is_familiar) => :is_familiar)
@@ -290,6 +198,45 @@ study_info(df) = (
 	|> pipe(Cols(r"Haskell", r"Lean") => ByRow(type_class_experience) => :type_class_experience)
 )
 
+# ╔═╡ ae17e013-c5fe-46b6-856a-a9e30ddeef89
+"""
+Compute the Spearman Rho correlation value for localization times.
+"""
+function compute_irr(; version=1)
+	function inner(dfs)		
+		elaborate(df, i) = (
+			dfs[i]
+			|> study_info
+			|> sel(Cols(:id, :found_rc)) 
+			|> pipe(:id => ByRow(r -> i) => :task)
+		)
+		
+		return (
+			map(i -> elaborate(dfs[i], i), 1:4) 
+			|> dfs -> reduce(vcat, dfs)
+			|> mp(:found_rc, r -> if ismissing(r) TIME_ZERO else r end)
+			|> mp(:found_rc, r -> convert(Second, r - TIME_ZERO).value)
+			|> filt(row -> row.id in IRR_IDS) 
+			|> sort_by([:id, :task])
+		)
+	end
+
+	dir = "irr-snapshots/" * string(version) * "/"
+	gavins_tasks = read_tasks(prefix=dir)
+	wills_tasks = read_tasks(prefix=dir * "Will's Copy of ")
+	
+	gavins_irr = inner(tasks)
+	wills_irr = inner(wills_tasks)
+
+	map(
+		f -> (Symbol(f), f(gavins_irr.found_rc, wills_irr.found_rc)), 
+		[corspearman, StatsBase.meanad]
+	)
+end
+
+# ╔═╡ 7d536e79-d41c-4797-9484-a68002fcf4c7
+map(v -> compute_irr(version=v), 1:2)
+
 # ╔═╡ 9a9ac33c-9b1a-4f2c-a5ea-b2a1c5ec6463
 md"""
 # Study Analysis
@@ -310,11 +257,11 @@ Filter the provided DataFrame by participants involved in version `version` of t
 """
 pick_version = filt(row -> !ismissing(row.version) && row.version == version)
 
+# ╔═╡ a10c2e29-aa43-4384-9cc9-ea156806a9ab
+by_task = @. study_info(tasks) |> pick_version;
+
 # ╔═╡ edefac7e-d9b7-4302-8b53-b451d8115498
-begin 
-	by_task = @. study_info(tasks) |> pick_version; nothing
-	all_tasks = reduce(vcat, by_task)
-end; nothing
+all_tasks = reduce(vcat, by_task);
 
 # ╔═╡ 8b7ae46c-fc53-4759-b3de-81584f43723c
 Markdown.parse("""
@@ -506,18 +453,6 @@ md"""
 ### Probability of finishing a task
 """
 
-# ╔═╡ 962a7146-1d6c-43cc-b8d1-f2c52356dcf3
-outcome_probability(df, counting; groupby=:has_argus) = (
-	df 
-	|> grouped(groupby)
-	|> comb(counting => sum => :count, nrow)
-	|> pipe(Cols(:count, :nrow) => (./) => :percent)
-	|> pipe(Cols(:count, :nrow, :percent) => ByRow((c,nr,p) -> begin
-		lower,upper = confint(BinomialTest(c, nr))
-		return p - lower, upper - p
-	end) => :confint)	
-)
-
 # ╔═╡ a2cd17d9-6db1-41eb-b514-20d08ae10eff
 function split_by_property(df, id)
 	for b in [false; true]	
@@ -535,34 +470,34 @@ The percentage of people who successfully completed a task without / with Argus
 """
 
 # ╔═╡ 1479f3c8-4788-4a68-8d44-e1799059cbe1
-outcome_probability(all_tasks, :is_success)
+λ.outcome_probability(all_tasks, :is_success)
 
 # ╔═╡ a3149ed4-341f-42f3-8d1e-aa32f38db71f
-outcome_probability(
+λ.outcome_probability(
 	all_tasks, 
 	:is_success; 
 	groupby=[:has_argus, :name]
 ) |> sort_by(:name)
 
 # ╔═╡ 437c7886-244f-4a46-9e84-94f354215d5e
-outcome_probability(
+λ.outcome_probability(
 	all_tasks, 
 	:is_success; 
 	groupby=[:has_argus, :is_real]
 ) |> sort_by(:is_real)
 
 # ╔═╡ 85485ebf-287c-4e3b-a8c4-49f4e4950b33
-outcome_probability(
+λ.outcome_probability(
 	all_tasks, 
 	:is_success; 
 	groupby=[:has_argus, :is_typestate]
 ) |> sort_by(:is_typestate)
 
 # ╔═╡ 4c19d73f-b0dc-4561-b596-32816e25dbe0
-outcome_probability(all_tasks, :did_localize)
+λ.outcome_probability(all_tasks, :did_localize)
 
 # ╔═╡ 0a5ed39a-8001-4872-8616-cab4f282c3d1
-outcome_probability(
+λ.outcome_probability(
 	all_tasks, 
 	:did_localize; 
 	groupby=[:is_typestate, :has_argus]
@@ -589,7 +524,7 @@ glm(
 
 # ╔═╡ f2887ad7-1f21-4202-b08d-19ec1e4e43f6
 (
-	outcome_probability(all_tasks, :is_success; groupby=:type_class_experience)
+	λ.outcome_probability(all_tasks, :is_success; groupby=:type_class_experience)
 	|> @df bar(
 		:type_class_experience, 
 		:percent, 
@@ -612,7 +547,7 @@ glm(
 
 # ╔═╡ 9ee0968f-0657-4162-be4f-adff196ecc2a
 (
-	outcome_probability(all_tasks, :is_success; groupby=:years)
+	λ.outcome_probability(all_tasks, :is_success; groupby=:years)
 	|> @df bar(
 		:years,
 		:percent,
@@ -653,7 +588,7 @@ lm(
 
 # ╔═╡ d5948ca1-2fbf-4c7c-9ebb-6ee6f51c2ace
 (
-	outcome_probability(all_tasks, :is_success; groupby=:rust_experience)
+	λ.outcome_probability(all_tasks, :is_success; groupby=:rust_experience)
 	|> @df bar(
 		:rust_experience, 
 		:percent, 
@@ -701,7 +636,7 @@ md"""
 
 # ╔═╡ 711347af-0fd0-43d9-b629-d0a6e32f91b7
 (
-	outcome_probability(all_tasks, :is_success)
+	λ.outcome_probability(all_tasks, :is_success)
 	|> pipe(:has_argus => ByRow(argus_label) => :has_argus)
 	|> sort_by(:has_argus)
 	|> @df bar(
@@ -717,7 +652,7 @@ md"""
 
 # ╔═╡ 82eb4533-b2e4-482e-829d-44990dacd417
 (
-	outcome_probability(all_tasks, :is_success; groupby=[:has_argus, :is_real])
+	λ.outcome_probability(all_tasks, :is_success; groupby=[:has_argus, :is_real])
 	|> mp(:has_argus, argus_label)
 	|> mp(:is_real, rw_label)
 	|> @df groupedbar(
@@ -734,7 +669,7 @@ md"""
 
 # ╔═╡ 77fe964c-5f42-47e1-958b-1667fa4ef586
 (
-	outcome_probability(all_tasks, :is_success; groupby=[:has_argus, :is_typestate])
+	λ.outcome_probability(all_tasks, :is_success; groupby=[:has_argus, :is_typestate])
 	|> mp(:has_argus, argus_label)
 	|> mp(:is_typestate, ts_label)
 	|> @df groupedbar(
@@ -751,7 +686,7 @@ md"""
 
 # ╔═╡ 97dce860-f311-4536-b3c5-2d9f23998140
 (
-	outcome_probability(all_tasks, :is_success; groupby=[:has_argus, :name])
+	λ.outcome_probability(all_tasks, :is_success; groupby=[:has_argus, :name])
 	|> mp(:has_argus, argus_label)
 	|> mp(:name, task_label)
 	|> @df groupedbar(
@@ -807,7 +742,7 @@ md"""
 
 # ╔═╡ ddccad5c-f02f-4591-b1da-9365a868922e
 (
-	outcome_probability(all_tasks, :did_localize)
+	λ.outcome_probability(all_tasks, :did_localize)
 	|> mp(:has_argus, argus_label)
 	|> sort_by(:has_argus)
 	|> @df bar( 
@@ -893,7 +828,7 @@ end
 
 # ╔═╡ 2f4cfe96-673a-4c57-84f4-957f15b28a69
 (
-	outcome_probability(all_tasks, :did_localize; groupby=[:has_argus, :is_typestate])
+	λ.outcome_probability(all_tasks, :did_localize; groupby=[:has_argus, :is_typestate])
 	|> mp(:has_argus, argus_label)
 	|> mp(:is_typestate, ts_label)
 	|> @df groupedbar(
@@ -980,7 +915,7 @@ Should people who didn't successfully solve the task be included below?
 @bind include_non_successes CheckBox()
 
 # ╔═╡ 46a8435f-673f-4bf4-a2f6-7b5e4b6cc41a
-filter_fixes = filt(r -> r.fixduration != Nanosecond(0) && (include_non_successes || r.is_success))
+filter_fixes = λ.filt(r -> r.fixduration != Nanosecond(0) && (include_non_successes || r.is_success))
 
 # ╔═╡ 8e7ebf75-19d4-43b6-b3eb-a680efc419cc
 (
@@ -1097,17 +1032,21 @@ PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 HypothesisTests = "09f84164-cd44-5f33-b23f-e6b0d136a0d5"
+PlutoLinks = "0ff47ea0-7a50-410d-8455-4348d5de0420"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 StatsKit = "2cb19f9e-ec4d-5c53-8573-a4542a68d3f0"
 StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
+TimeSeries = "9e3dc215-6440-5c97-bce1-76c03772f85e"
 
 [compat]
 DataFrames = "~1.6.1"
 HypothesisTests = "~0.11.0"
+PlutoLinks = "~0.1.6"
 PlutoUI = "~0.7.60"
 StatsKit = "~0.3.1"
 StatsPlots = "~0.15.7"
+TimeSeries = "~0.24.2"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -1116,7 +1055,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.10.4"
 manifest_format = "2.0"
-project_hash = "92c7fe7c637ee4f1600604a3905cfd4fe01bc0bf"
+project_hash = "aa651f8810f7191dada2aad09843da94d26c1c2f"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -1306,6 +1245,12 @@ deps = ["Distances", "LinearAlgebra", "NearestNeighbors", "Printf", "Random", "S
 git-tree-sha1 = "9ebb045901e9bbf58767a9f34ff89831ed711aae"
 uuid = "aaaa29a8-35af-508c-8bc3-b662a17a0fe5"
 version = "0.15.7"
+
+[[deps.CodeTracking]]
+deps = ["InteractiveUtils", "UUIDs"]
+git-tree-sha1 = "7eee164f122511d3e4e1ebadb7956939ea7e1c77"
+uuid = "da1fd8a2-8d9e-5ec2-8556-3022fb5608a2"
+version = "1.3.6"
 
 [[deps.CodecLz4]]
 deps = ["Lz4_jll", "TranscodingStreams"]
@@ -1842,6 +1787,12 @@ git-tree-sha1 = "c84a835e1a09b289ffcd2271bf2a337bbdda6637"
 uuid = "aacddb02-875f-59d6-b918-886e6ef4fbf8"
 version = "3.0.3+0"
 
+[[deps.JuliaInterpreter]]
+deps = ["CodeTracking", "InteractiveUtils", "Random", "UUIDs"]
+git-tree-sha1 = "2984284a8abcfcc4784d95a9e2ea4e352dd8ede7"
+uuid = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"
+version = "0.9.36"
+
 [[deps.KernelDensity]]
 deps = ["Distributions", "DocStringExtensions", "FFTW", "Interpolations", "StatsBase"]
 git-tree-sha1 = "7d703202e65efa1369de1279c162b915e245eed1"
@@ -2006,6 +1957,12 @@ deps = ["Dates", "Logging"]
 git-tree-sha1 = "c1dd6d7978c12545b4179fb6153b9250c96b0075"
 uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 version = "1.0.3"
+
+[[deps.LoweredCodeUtils]]
+deps = ["JuliaInterpreter"]
+git-tree-sha1 = "260dc274c1bc2cb839e758588c63d9c8b5e639d1"
+uuid = "6f1432cf-f94c-5a45-995e-cdbf5db27b0b"
+version = "3.0.5"
 
 [[deps.Lz4_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -2251,6 +2208,18 @@ version = "1.40.8"
     ImageInTerminal = "d8c32880-2388-543b-8c61-d9f865259254"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
+[[deps.PlutoHooks]]
+deps = ["InteractiveUtils", "Markdown", "UUIDs"]
+git-tree-sha1 = "072cdf20c9b0507fdd977d7d246d90030609674b"
+uuid = "0ff47ea0-7a50-410d-8455-4348d5de0774"
+version = "0.0.5"
+
+[[deps.PlutoLinks]]
+deps = ["FileWatching", "InteractiveUtils", "Markdown", "PlutoHooks", "Revise", "UUIDs"]
+git-tree-sha1 = "8f5fa7056e6dcfb23ac5211de38e6c03f6367794"
+uuid = "0ff47ea0-7a50-410d-8455-4348d5de0420"
+version = "0.1.6"
+
 [[deps.PlutoUI]]
 deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
 git-tree-sha1 = "eba4810d5e6a01f612b948c9fa94f905b49087b0"
@@ -2378,6 +2347,12 @@ deps = ["UUIDs"]
 git-tree-sha1 = "838a3a4188e2ded87a4f9f184b4b0d78a1e91cb7"
 uuid = "ae029012-a4dd-5104-9daa-d747884805df"
 version = "1.3.0"
+
+[[deps.Revise]]
+deps = ["CodeTracking", "Distributed", "FileWatching", "JuliaInterpreter", "LibGit2", "LoweredCodeUtils", "OrderedCollections", "REPL", "Requires", "UUIDs", "Unicode"]
+git-tree-sha1 = "7f4228017b83c66bd6aa4fddeb170ce487e53bc7"
+uuid = "295af30f-e4ad-537b-8983-00126c2a3abe"
+version = "3.6.2"
 
 [[deps.Rmath]]
 deps = ["Random", "Rmath_jll"]
@@ -3011,35 +2986,27 @@ version = "1.4.1+1"
 
 # ╔═╡ Cell order:
 # ╟─93a5e415-4b56-4edd-b59c-c00ce4be8612
+# ╟─1d2b6490-bc1e-4c68-8915-55fd38e79b95
 # ╠═7c3539da-636b-47f6-a310-7b26a54a27af
+# ╠═c9a9f595-744c-46d5-8faf-ae655a1b78a2
 # ╠═0cd2f4a3-913d-42c3-92c7-155f9fdf0d30
-# ╟─33d08d01-6b72-4a5f-a299-d1294c5fab60
-# ╟─bef8a611-9363-4f12-91fc-32e80e215765
-# ╟─08e052d8-069f-4b0d-ba73-5e73337f42ba
-# ╟─75ed61cd-36e8-4d89-9f94-e8a6d1a7a257
-# ╟─37d4055b-c0e4-4262-948a-9530b9d9376e
-# ╟─a867b826-7402-4d6f-a938-a6191d612750
-# ╠═bc8d37ad-4b9f-4005-b98b-f54404c6b5fa
+# ╟─a85aa103-5f00-4d3a-808a-be678b64500a
+# ╠═76edb6c5-01aa-4457-b340-876663bd91ac
+# ╠═b9044b0e-543c-415a-b8e1-081cd80479a6
+# ╠═0736719d-6e17-47d0-bb4c-6c8e78bb2bf8
+# ╠═8e2742e2-2bb7-404a-81c5-8694a21b261f
+# ╟─0cc9668f-5f3a-4d95-8b83-5cdf356c6dd3
+# ╟─3f2ceb2a-a14a-4502-8bf0-2d311d4d4062
+# ╟─ae17e013-c5fe-46b6-856a-a9e30ddeef89
+# ╠═7d536e79-d41c-4797-9484-a68002fcf4c7
+# ╟─60e21bd4-779e-440b-8a7a-805eca8690c5
 # ╟─f1ffa2d0-0449-4f28-af5e-25399e5eef99
 # ╟─79edf283-50ff-4dd6-b567-326b444a546e
 # ╟─1dece7d4-b4a4-4c1d-a5b2-81f1e14716c0
-# ╟─d7e74259-ae1b-44f9-b9ca-02f65ea3ea34
-# ╟─e1e9d18b-82ef-4ad0-b7e8-3dc656e55c56
-# ╟─a3b55790-db8a-40d7-b701-ab300b477dbf
-# ╟─e20ca3a8-e467-4218-9be9-62924495d5f8
-# ╟─d6ba8b51-6402-4ce4-938f-cb635a2e3525
-# ╟─483257bc-3d80-47c7-85a5-d022bb0a1fe2
-# ╟─7f5c29bd-39e6-4e78-98fb-4cb8c1547ff1
-# ╟─f6133a15-f1a1-4d69-9e04-7f96667ccdb2
 # ╟─e5d38326-108b-4c4d-ad77-5be3597123c5
-# ╟─5cc19bfe-a550-4151-bf04-d40ad66e9909
-# ╟─dc49af3b-c104-42e0-a98e-15b2bc3629b0
-# ╟─54c941cc-51b5-4bf8-b971-33cffcaee05a
-# ╠═f7ac2cdb-64a0-4b12-822a-117d7aae3a16
-# ╟─fc5520a3-9737-44d6-9b4b-1aa00b2bb0dc
-# ╠═151709aa-fde5-4c2b-a75b-58daa99addc8
 # ╟─6fa2360d-cae0-4d1d-83fb-9cca1d471514
 # ╟─abc0d0ea-27e6-4bad-bc95-9d6539ab4f44
+# ╠═a10c2e29-aa43-4384-9cc9-ea156806a9ab
 # ╠═edefac7e-d9b7-4302-8b53-b451d8115498
 # ╟─9a9ac33c-9b1a-4f2c-a5ea-b2a1c5ec6463
 # ╟─59dcf3ba-53fa-448b-b8de-25f981ee7d5f
@@ -3066,7 +3033,6 @@ version = "1.4.1+1"
 # ╟─1d29ad6c-f86a-4bb3-8986-c9288ae0b5f3
 # ╠═179946d9-40a9-4776-bd9f-911e87c8c9e7
 # ╟─854ea614-0bb6-4764-8fce-8d53a1e91819
-# ╠═962a7146-1d6c-43cc-b8d1-f2c52356dcf3
 # ╟─a2cd17d9-6db1-41eb-b514-20d08ae10eff
 # ╟─a7a428a4-afb9-467b-82e5-8ddf6c6a9dbd
 # ╠═1479f3c8-4788-4a68-8d44-e1799059cbe1
@@ -3102,7 +3068,7 @@ version = "1.4.1+1"
 # ╟─e57f0e48-dc63-4870-a8dd-530e977d7c79
 # ╠═ddccad5c-f02f-4591-b1da-9365a868922e
 # ╟─cfb1b551-125c-492c-9148-b02fc53cb454
-# ╟─cdeff58b-cc7f-47f8-b420-795a3a8c3f98
+# ╠═cdeff58b-cc7f-47f8-b420-795a3a8c3f98
 # ╟─c545b3b2-3a65-4083-b2ea-66381066237a
 # ╠═2f4cfe96-673a-4c57-84f4-957f15b28a69
 # ╟─7e666c86-e7fb-43de-977a-c9793d1a701d
