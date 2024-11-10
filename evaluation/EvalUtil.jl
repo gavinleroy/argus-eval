@@ -96,36 +96,6 @@ md"""
 ## DataFrame helpers
 """
 
-# ╔═╡ 4ae8fa14-9f83-4934-a0d1-cce4b0e8bc02
-sel(ARGS...) = f -> DataFrames.select(f, ARGS...)
-
-# ╔═╡ 2d027c81-c0f0-4717-bdac-06303427baee
-pipe(ARGS...) = f -> DataFrames.transform(f, ARGS...)
-
-# ╔═╡ 0821f573-e4a6-4688-a95b-9e329c95c25f
-comb(ARGS...) = f -> DataFrames.combine(f, ARGS...)
-
-# ╔═╡ a870e772-cdd1-4550-9abc-515b15ac01bb
-grouped(ARGS...) = f -> DataFrames.groupby(f, ARGS...)
-
-# ╔═╡ 7eebdbb9-bf47-432b-ae6b-76f3bd1eafd9
-ftask(s::AbstractString) = df -> filter(row -> row.name == s, df)
-
-# ╔═╡ 750dcbe5-993a-4590-bcf5-e743948cbcb4
-filt(func) = df -> DataFrames.filter(func, df)
-
-# ╔═╡ 8b999c0f-7773-4262-a453-99eb133c46f5
-sort_by(v) = df -> sort(df, v)
-
-# ╔═╡ bf9dc1a9-e1ea-461d-a01c-b96962751848
-mp(s, f) = pipe(s => ByRow(f) => s)
-
-# ╔═╡ e3284fd2-3417-4354-b1c1-20e5f8bd12b8
-with_argus = filt(row -> row.has_argus)
-
-# ╔═╡ a603ba0a-5f26-4f94-bf66-ad9c27f4429d
-no_argus = filt(row -> !row.has_argus)
-
 # ╔═╡ 015c5639-c0db-4f80-a8cb-72901e64186b
 md"""
 ## Ploting Helpers
@@ -182,18 +152,6 @@ end
 # ╔═╡ e994a28e-524e-4792-8b91-659265e4c9ab
 function crate_familiarity(s::AbstractString) 
 	df -> crate_familiarity(df, s) 
-end
-
-# ╔═╡ dd0f8120-3918-4ed2-82b0-19253a01f43e
-function outcome_probability(df, counting; groupby=:has_argus)
-	(df 
-	|> grouped(groupby)
-	|> comb(counting => sum => :count, nrow)
-	|> pipe(Cols(:count, :nrow) => (./) => :percent)
-	|> pipe(Cols(:count, :nrow, :percent) => ByRow((c,nr,p) -> begin
-		lower,upper = confint(BinomialTest(c, nr))
-		return p - lower, upper - p
-	end) => :confint))
 end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -1354,17 +1312,7 @@ version = "17.4.0+2"
 # ╠═5e98ae15-38c1-4de5-88e2-6fb79b710ace
 # ╠═f8d6b269-6ef2-44f8-9002-ed1ca8cfb754
 # ╠═9c929d01-614c-4707-a8f5-d1a891b559b1
-# ╟─385622d5-1848-439d-a8e4-272db91d0e42
-# ╠═4ae8fa14-9f83-4934-a0d1-cce4b0e8bc02
-# ╠═2d027c81-c0f0-4717-bdac-06303427baee
-# ╠═0821f573-e4a6-4688-a95b-9e329c95c25f
-# ╠═a870e772-cdd1-4550-9abc-515b15ac01bb
-# ╠═7eebdbb9-bf47-432b-ae6b-76f3bd1eafd9
-# ╠═750dcbe5-993a-4590-bcf5-e743948cbcb4
-# ╠═8b999c0f-7773-4262-a453-99eb133c46f5
-# ╠═bf9dc1a9-e1ea-461d-a01c-b96962751848
-# ╠═e3284fd2-3417-4354-b1c1-20e5f8bd12b8
-# ╠═a603ba0a-5f26-4f94-bf66-ad9c27f4429d
+# ╠═385622d5-1848-439d-a8e4-272db91d0e42
 # ╟─015c5639-c0db-4f80-a8cb-72901e64186b
 # ╠═e772a2eb-382b-433b-b33f-f0c8a6091ccd
 # ╠═19460ce4-ffb4-4c33-a5ef-9dc0d2783a91
@@ -1375,6 +1323,5 @@ version = "17.4.0+2"
 # ╠═cc51107b-d314-482a-ba45-a9b997f469e7
 # ╠═6bdefac5-1cd6-4f41-9faa-d2558997dc7d
 # ╠═e994a28e-524e-4792-8b91-659265e4c9ab
-# ╠═dd0f8120-3918-4ed2-82b0-19253a01f43e
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

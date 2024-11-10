@@ -42,43 +42,50 @@ md"""
 λ = @ingredients("./EvalUtil.jl")
 
 # ╔═╡ b9044b0e-543c-415a-b8e1-081cd80479a6
-form = cel("Responses");
+form = λ.cel("Responses");
 
 # ╔═╡ 0736719d-6e17-47d0-bb4c-6c8e78bb2bf8
-versions = cel("Meta");
+versions = λ.cel("Meta");
 
 # ╔═╡ 8e2742e2-2bb7-404a-81c5-8694a21b261f
-tasks = read_tasks();
-
-# ╔═╡ 0cc9668f-5f3a-4d95-8b83-5cdf356c6dd3
-md"""
-## Inter-Rater Reliability
-"""
-
-# ╔═╡ 3f2ceb2a-a14a-4502-8bf0-2d311d4d4062
-"""
-The participant IDs used for IRR.
-"""
-IRR_IDS = [19, 74, 62, 38, 50]
-
-# ╔═╡ 60e21bd4-779e-440b-8a7a-805eca8690c5
-md"""
-## Study Meta Data
-"""
-
-# ╔═╡ f1ffa2d0-0449-4f28-af5e-25399e5eef99
-SIGNED_UP = length(versions.id)
-
-# ╔═╡ 79edf283-50ff-4dd6-b567-326b444a546e
-DID_NOT_PARTICIPATE = count(ismissing, versions.version)
-
-# ╔═╡ 1dece7d4-b4a4-4c1d-a5b2-81f1e14716c0
-PARTICIPATION_RATE = (SIGNED_UP - DID_NOT_PARTICIPATE) / SIGNED_UP
+tasks = λ.read_tasks();
 
 # ╔═╡ 6fa2360d-cae0-4d1d-83fb-9cca1d471514
 md"""
 ### Data preprocessing
 """
+
+# ╔═╡ 09b57e4d-7400-47ee-9981-f6f39eb128f1
+md"""
+Functional helpers for DataFrames
+"""
+
+# ╔═╡ 28aa8578-f4c1-4215-9fab-e44193073dba
+begin
+	sel(ARGS...) = f -> DataFrames.select(f, ARGS...)
+	pipe(ARGS...) = f -> DataFrames.transform(f, ARGS...)
+	comb(ARGS...) = f -> DataFrames.combine(f, ARGS...)
+	grouped(ARGS...) = f -> DataFrames.groupby(f, ARGS...)
+	ftask(s::AbstractString) = df -> filter(row -> row.name == s, df)
+	filt(func) = df -> DataFrames.filter(func, df)
+	sort_by(v) = df -> sort(df, v)
+	mp(s, f) = pipe(s => ByRow(f) => s)
+	with_argus = filt(row -> row.has_argus)
+	no_argus = filt(row -> !row.has_argus)
+	labelize(df) = (
+		df 
+		|> mp(:has_argus, λ.argus_label)
+		|> mp(:localized, s -> Second(s).value)
+		|> mp(:duration, s -> Second(s).value)
+		|> mp(:fixduration, s -> Second(s).value)
+		|> mp(:is_typestate, λ.ts_label)
+		|> mp(:is_real, λ.rw_label)
+		|> mp(:has_async_experience, λ.async_label)
+		|> mp(:axum, λ.familiar_label)
+		|> mp(:is_familiar, λ.familiar_label)
+		|> mp(:name, λ.task_label)
+	)
+end
 
 # ╔═╡ abc0d0ea-27e6-4bad-bc95-9d6539ab4f44
 """
@@ -93,7 +100,7 @@ study_info(df) = (
 	# "Remove" missings from data. There isn't data missing, but Julia
 	# thinks there is because of how the data is read in. 
 	|> pipe(:name => ByRow(n -> coalesce(n, "DUMMY")) => :name)
-	|> pipe(:start => ByRow(x -> coalesce(x, TIME_ZERO)) => :start)
+	|> pipe(:start => ByRow(x -> coalesce(x, λ.TIME_ZERO)) => :start)
 	
 	# Some participants took a break in the middle of a task to do something, e.g., answer the door/phone, left the room to get water. The fields `break_start` and `break_end` are used for these scenarios (`missing` otherwise).
 	
@@ -105,7 +112,7 @@ study_info(df) = (
 	|> pipe(Cols(:start, :end, :break_duration) => 
 		ByRow((s, e, bd) ->
 		if ismissing(e)
-			s + MAX_TASK_DURATION
+			s + λ.MAX_TASK_DURATION
 		else 
 			e - bd
 		end) => :end)
@@ -140,7 +147,7 @@ study_info(df) = (
 	# `found_rc` needs to be clamped to `start + MAX_TASK_DURATION`.
 	|> pipe(Cols(:start, :found_rc, :end, :is_success) => 
 		ByRow((s,frc,e,is) -> begin
-			MAX_END = s + MAX_TASK_DURATION
+			MAX_END = s + λ.MAX_TASK_DURATION
 			new_end = if e > MAX_END MAX_END else e end
 			new_frc = if MAX_END < frc MAX_END else frc end
 			new_is = if MAX_END < e false else is end
@@ -158,11 +165,11 @@ study_info(df) = (
 	|> pipe(Cols(:end, :found_rc) => (.!=) => :did_localize)
 	
 	# Is this problem real or synthetic?
-	|> pipe(:name => ByRow(n -> n in real_world_problems) => :is_real)
+	|> pipe(:name => ByRow(n -> n in λ.real_world_problems) => :is_real)
 	|> pipe(:is_real => ByRow((!)) => :is_synthetic)
 
 	# Is this problem a typestate problem or a "tree" problem?
-	|> pipe(:name => ByRow(n -> n in tree_problems) => :is_tree)
+	|> pipe(:name => ByRow(n -> n in λ.tree_problems) => :is_tree)
 	|> pipe(:is_tree => ByRow((!)) => :is_typestate)
 
 	# Make column for familiarity with a crate
@@ -171,7 +178,8 @@ study_info(df) = (
 	|> λ.crate_familiarity("Diesel")
 	
  	# Is the developer familiar with the underlying crate?
- 	|> pipe(Cols(:name, :axum, :bevy, :diesel) => ByRow(is_familiar) => :is_familiar)
+ 	|> pipe(Cols(:name, :axum, :bevy, :diesel) => 
+		ByRow(λ.is_familiar) => :is_familiar)
 
 	# How many years total have you been programming?
 	|> pipe(r"years total" => ByRow(identity) => :years)
@@ -189,14 +197,26 @@ study_info(df) = (
 	|> pipe(:rust_experience => ByRow(x -> coalesce(x, 0)) => :rust_experience)
 
 	# Have you used Rust for enough years?
-	|> pipe(:rust_experience => ByRow(x -> x >= EXPERT_RUST_EXP) => :enough_years)
+	|> pipe(:rust_experience => ByRow(x -> x >= λ.EXPERT_RUST_EXP) => :enough_years)
 
 	# Are an expert if they self-identified or have enough rust experience
 	|> pipe(Cols(:identifies_as_expert, :enough_years) => (.|) => :is_expert)
 	
 	# Quantify their "Type Class" experience by summing Haskell/Lean experience
-	|> pipe(Cols(r"Haskell", r"Lean") => ByRow(type_class_experience) => :type_class_experience)
+	|> pipe(Cols(r"Haskell", r"Lean") => 
+		ByRow(λ.type_class_experience) => :type_class_experience)
 )
+
+# ╔═╡ 0cc9668f-5f3a-4d95-8b83-5cdf356c6dd3
+md"""
+## Inter-Rater Reliability
+"""
+
+# ╔═╡ 3f2ceb2a-a14a-4502-8bf0-2d311d4d4062
+"""
+The participant IDs used for IRR.
+"""
+IRR_IDS = [19, 74, 62, 38, 50]
 
 # ╔═╡ ae17e013-c5fe-46b6-856a-a9e30ddeef89
 """
@@ -214,18 +234,18 @@ function compute_irr(; version=1)
 		return (
 			map(i -> elaborate(dfs[i], i), 1:4) 
 			|> dfs -> reduce(vcat, dfs)
-			|> mp(:found_rc, r -> if ismissing(r) TIME_ZERO else r end)
-			|> mp(:found_rc, r -> convert(Second, r - TIME_ZERO).value)
+			|> mp(:found_rc, r -> if ismissing(r) λ.TIME_ZERO else r end)
+			|> mp(:found_rc, r -> convert(Second, r - λ.TIME_ZERO).value)
 			|> filt(row -> row.id in IRR_IDS) 
 			|> sort_by([:id, :task])
 		)
 	end
 
 	dir = "irr-snapshots/" * string(version) * "/"
-	gavins_tasks = read_tasks(prefix=dir)
-	wills_tasks = read_tasks(prefix=dir * "Will's Copy of ")
+	gavins_tasks = λ.read_tasks(prefix=dir)
+	wills_tasks = λ.read_tasks(prefix=dir * "Will's Copy of ")
 	
-	gavins_irr = inner(tasks)
+	gavins_irr = inner(gavins_tasks)
 	wills_irr = inner(wills_tasks)
 
 	map(
@@ -236,6 +256,20 @@ end
 
 # ╔═╡ 7d536e79-d41c-4797-9484-a68002fcf4c7
 map(v -> compute_irr(version=v), 1:2)
+
+# ╔═╡ 60e21bd4-779e-440b-8a7a-805eca8690c5
+md"""
+## Study Meta Data
+"""
+
+# ╔═╡ f1ffa2d0-0449-4f28-af5e-25399e5eef99
+SIGNED_UP = length(versions.id)
+
+# ╔═╡ 79edf283-50ff-4dd6-b567-326b444a546e
+DID_NOT_PARTICIPATE = count(ismissing, versions.version)
+
+# ╔═╡ 1dece7d4-b4a4-4c1d-a5b2-81f1e14716c0
+PARTICIPATION_RATE = (SIGNED_UP - DID_NOT_PARTICIPATE) / SIGNED_UP
 
 # ╔═╡ 9a9ac33c-9b1a-4f2c-a5ea-b2a1c5ec6463
 md"""
@@ -453,6 +487,22 @@ md"""
 ### Probability of finishing a task
 """
 
+# ╔═╡ bb5ec6d8-85b0-4cbd-b7bf-f259b3ed0ca1
+function outcome_probability(df, counting; groupby=:has_argus)
+	(df 
+	|> grouped(groupby)
+	|> comb(counting => sum => :count, nrow)
+	|> pipe(Cols(:count, :nrow) => (./) => :percent)
+	|> pipe(Cols(:count, :nrow, :percent) => ByRow((c,nr,p) -> begin
+		lower,upper = confint(BinomialTest(c, nr))
+		return p - lower, upper - p
+	end) => :confint))
+end
+
+# ╔═╡ 1713a0fc-a039-428e-b565-194e47055596
+outcome_probability(s::Symbol; groupby=:has_argus) = 
+	df -> outcome_probability(df, s; groupby=groupby)
+
 # ╔═╡ a2cd17d9-6db1-41eb-b514-20d08ae10eff
 function split_by_property(df, id)
 	for b in [false; true]	
@@ -470,34 +520,34 @@ The percentage of people who successfully completed a task without / with Argus
 """
 
 # ╔═╡ 1479f3c8-4788-4a68-8d44-e1799059cbe1
-λ.outcome_probability(all_tasks, :is_success)
+outcome_probability(all_tasks, :is_success)
 
 # ╔═╡ a3149ed4-341f-42f3-8d1e-aa32f38db71f
-λ.outcome_probability(
+outcome_probability(
 	all_tasks, 
 	:is_success; 
 	groupby=[:has_argus, :name]
 ) |> sort_by(:name)
 
 # ╔═╡ 437c7886-244f-4a46-9e84-94f354215d5e
-λ.outcome_probability(
+outcome_probability(
 	all_tasks, 
 	:is_success; 
 	groupby=[:has_argus, :is_real]
 ) |> sort_by(:is_real)
 
 # ╔═╡ 85485ebf-287c-4e3b-a8c4-49f4e4950b33
-λ.outcome_probability(
+outcome_probability(
 	all_tasks, 
 	:is_success; 
 	groupby=[:has_argus, :is_typestate]
 ) |> sort_by(:is_typestate)
 
 # ╔═╡ 4c19d73f-b0dc-4561-b596-32816e25dbe0
-λ.outcome_probability(all_tasks, :did_localize)
+outcome_probability(all_tasks, :did_localize)
 
 # ╔═╡ 0a5ed39a-8001-4872-8616-cab4f282c3d1
-λ.outcome_probability(
+outcome_probability(
 	all_tasks, 
 	:did_localize; 
 	groupby=[:is_typestate, :has_argus]
@@ -524,7 +574,7 @@ glm(
 
 # ╔═╡ f2887ad7-1f21-4202-b08d-19ec1e4e43f6
 (
-	λ.outcome_probability(all_tasks, :is_success; groupby=:type_class_experience)
+	outcome_probability(all_tasks, :is_success; groupby=:type_class_experience)
 	|> @df bar(
 		:type_class_experience, 
 		:percent, 
@@ -547,7 +597,7 @@ glm(
 
 # ╔═╡ 9ee0968f-0657-4162-be4f-adff196ecc2a
 (
-	λ.outcome_probability(all_tasks, :is_success; groupby=:years)
+	outcome_probability(all_tasks, :is_success; groupby=:years)
 	|> @df bar(
 		:years,
 		:percent,
@@ -588,7 +638,7 @@ lm(
 
 # ╔═╡ d5948ca1-2fbf-4c7c-9ebb-6ee6f51c2ace
 (
-	λ.outcome_probability(all_tasks, :is_success; groupby=:rust_experience)
+	outcome_probability(all_tasks, :is_success; groupby=:rust_experience)
 	|> @df bar(
 		:rust_experience, 
 		:percent, 
@@ -636,8 +686,9 @@ md"""
 
 # ╔═╡ 711347af-0fd0-43d9-b629-d0a6e32f91b7
 (
-	λ.outcome_probability(all_tasks, :is_success)
-	|> pipe(:has_argus => ByRow(argus_label) => :has_argus)
+	all_tasks 
+	|> labelize
+	|> outcome_probability(:is_success)
 	|> sort_by(:has_argus)
 	|> @df bar(
 		:has_argus,
@@ -652,9 +703,9 @@ md"""
 
 # ╔═╡ 82eb4533-b2e4-482e-829d-44990dacd417
 (
-	λ.outcome_probability(all_tasks, :is_success; groupby=[:has_argus, :is_real])
-	|> mp(:has_argus, argus_label)
-	|> mp(:is_real, rw_label)
+	outcome_probability(all_tasks, :is_success; groupby=[:has_argus, :is_real])
+	|> mp(:has_argus, λ.argus_label)
+	|> mp(:is_real, λ.rw_label)
 	|> @df groupedbar(
 		:is_real,
 		:percent,
@@ -669,9 +720,9 @@ md"""
 
 # ╔═╡ 77fe964c-5f42-47e1-958b-1667fa4ef586
 (
-	λ.outcome_probability(all_tasks, :is_success; groupby=[:has_argus, :is_typestate])
-	|> mp(:has_argus, argus_label)
-	|> mp(:is_typestate, ts_label)
+	all_tasks 
+	|> labelize
+	|> outcome_probability(:is_success; groupby=[:has_argus, :is_typestate])
 	|> @df groupedbar(
 		:is_typestate,
 		:percent,
@@ -686,9 +737,9 @@ md"""
 
 # ╔═╡ 97dce860-f311-4536-b3c5-2d9f23998140
 (
-	λ.outcome_probability(all_tasks, :is_success; groupby=[:has_argus, :name])
-	|> mp(:has_argus, argus_label)
-	|> mp(:name, task_label)
+	outcome_probability(all_tasks, :is_success; groupby=[:has_argus, :name])
+	|> mp(:has_argus, λ.argus_label)
+	|> mp(:name, λ.task_label)
 	|> @df groupedbar(
 		:name,
 		:percent, 
@@ -705,7 +756,7 @@ md"""
 # ╔═╡ 4082c5c8-dafb-41ea-aa69-7bde33b7fd1a
 (
 	all_tasks
-	|> pipe(:has_argus => ByRow(argus_label) => :has_argus)
+	|> pipe(:has_argus => ByRow(λ.argus_label) => :has_argus)
 	|> pipe(:duration => ByRow(Second) => :duration)
 	|> sort_by(:has_argus)
 	|> @df boxplot(
@@ -720,9 +771,7 @@ md"""
 # ╔═╡ 75d602a7-177e-44e3-a9b1-a3deceec355f
 (
 	all_tasks
-	|> mp(:is_real, rw_label)
-	|> mp(:duration, Second)
-	|> mp(:has_argus, argus_label)
+	|> labelize
 	|> sort_by(:is_real)
 	|> @df groupedboxplot(
 		:is_real, 
@@ -742,8 +791,9 @@ md"""
 
 # ╔═╡ ddccad5c-f02f-4591-b1da-9365a868922e
 (
-	λ.outcome_probability(all_tasks, :did_localize)
-	|> mp(:has_argus, argus_label)
+	all_tasks
+	|> labelize
+	|> outcome_probability(:did_localize)
 	|> sort_by(:has_argus)
 	|> @df bar( 
 		:has_argus,
@@ -793,9 +843,7 @@ end
 # ╔═╡ cdeff58b-cc7f-47f8-b420-795a3a8c3f98
 (
 	all_tasks 
-	|> mp(:has_argus, argus_label)
-	|> mp(:localized, Second)
-	|> mp(:localized, s -> s.value)
+	|> labelize
 	|> sort_by(:has_argus)
 	|> @df groupedboxplot(
 		:has_argus,
@@ -811,10 +859,7 @@ end
 # ╔═╡ c545b3b2-3a65-4083-b2ea-66381066237a
 (
 	all_tasks
-	|> mp(:has_argus, argus_label)
-	|> mp(:is_real, rw_label)
-	|> mp(:localized, Second)
-	|> mp(:localized, s -> s.value)
+	|> labelize
 	|> sort_by(:is_real)
 	|> @df groupedboxplot(
 		:is_real, 
@@ -828,9 +873,9 @@ end
 
 # ╔═╡ 2f4cfe96-673a-4c57-84f4-957f15b28a69
 (
-	λ.outcome_probability(all_tasks, :did_localize; groupby=[:has_argus, :is_typestate])
-	|> mp(:has_argus, argus_label)
-	|> mp(:is_typestate, ts_label)
+	all_tasks
+	|> labelize
+	|> outcome_probability(:did_localize; groupby=[:has_argus, :is_typestate])
 	|> @df groupedbar(
 		:is_typestate,
 		:percent,
@@ -847,10 +892,7 @@ end
 # ╔═╡ 7e666c86-e7fb-43de-977a-c9793d1a701d
 (
 	all_tasks
-	|> mp(:has_argus, argus_label)
-	|> mp(:localized, Second)
-	|> mp(:localized, s -> s.value)
-	|> mp(:name, task_label)
+	|> labelize
 	|> sort_by(:name)
 	|> @df groupedboxplot(
 		:name,
@@ -867,15 +909,13 @@ end
 plot(map(task -> (
 		all_tasks
 		|> ftask(task)
-		|> mp(:is_familiar, familiar_label)
-		|> mp(:localized, Second)
-		|> mp(:has_argus, argus_label)
+		|> labelize
 		|> sort_by(:is_familiar)
 		|> @df groupedboxplot(
 			:is_familiar, 
 			:localized, 
 			group=:has_argus,
-			title=task_label(task),
+			title=λ.task_label(task),
 			legend=false
 		)
 	), ["axum-0", "bevy-0", "diesel-0"])...,
@@ -890,9 +930,7 @@ How does async Rust experience factor into debugging Axum?
 (
 	all_tasks
 	|> ftask("axum-0")
-	|> mp(:has_async_experience, async_label)
-	|> mp(:axum, familiar_label)
-	|> mp(:localized, Second)
+	|> labelize
 	|> sort_by(:has_async_experience)
 	|> @df groupedboxplot(
 		:has_async_experience,
@@ -915,14 +953,13 @@ Should people who didn't successfully solve the task be included below?
 @bind include_non_successes CheckBox()
 
 # ╔═╡ 46a8435f-673f-4bf4-a2f6-7b5e4b6cc41a
-filter_fixes = λ.filt(r -> r.fixduration != Nanosecond(0) && (include_non_successes || r.is_success))
+filter_fixes = filt(r -> r.fixduration != Nanosecond(0) && (include_non_successes || r.is_success))
 
 # ╔═╡ 8e7ebf75-19d4-43b6-b3eb-a680efc419cc
 (
 	all_tasks 
 	|> filter_fixes
-	|> mp(:has_argus, argus_label)
-	|> mp(:fixduration, Second)
+	|> labelize
 	|> sort_by(:has_argus)
 	|> @df groupedboxplot(
 		:has_argus,
@@ -939,9 +976,7 @@ filter_fixes = λ.filt(r -> r.fixduration != Nanosecond(0) && (include_non_succe
 (
 	all_tasks 
 	|> filter_fixes
-	|> mp(:fixduration, Second)
-	|> mp(:has_argus, argus_label)
-	|> mp(:name, task_label)
+	|> labelize
 	|> sort_by(:name)
 	|> @df groupedboxplot(
 		:name,
@@ -959,11 +994,11 @@ md"""
 ## Performance Evaluation
 """
 
+# ╔═╡ d8118312-5f83-454f-8bec-0ac9b0a4b416
+dnf_perf = CSV.read("./data/dnf-perf.csv", DataFrame);
+
 # ╔═╡ cee969d8-45a3-437b-9393-c1c8a2e271ba
-begin
-	dnf_perf = CSV.read("./data/dnf-perf.csv", DataFrame)
-	heuristic_precision = CSV.read("./data/heuristic-precision.csv", DataFrame)
-end; nothing
+heuristic_precision = CSV.read("./data/heuristic-precision.csv", DataFrame);
 
 # ╔═╡ 2cbfd932-7144-47d1-8c92-9d58a0fb63ba
 median(dnf_perf.Time)
@@ -2995,6 +3030,10 @@ version = "1.4.1+1"
 # ╠═b9044b0e-543c-415a-b8e1-081cd80479a6
 # ╠═0736719d-6e17-47d0-bb4c-6c8e78bb2bf8
 # ╠═8e2742e2-2bb7-404a-81c5-8694a21b261f
+# ╟─6fa2360d-cae0-4d1d-83fb-9cca1d471514
+# ╟─09b57e4d-7400-47ee-9981-f6f39eb128f1
+# ╟─28aa8578-f4c1-4215-9fab-e44193073dba
+# ╟─abc0d0ea-27e6-4bad-bc95-9d6539ab4f44
 # ╟─0cc9668f-5f3a-4d95-8b83-5cdf356c6dd3
 # ╟─3f2ceb2a-a14a-4502-8bf0-2d311d4d4062
 # ╟─ae17e013-c5fe-46b6-856a-a9e30ddeef89
@@ -3004,8 +3043,6 @@ version = "1.4.1+1"
 # ╟─79edf283-50ff-4dd6-b567-326b444a546e
 # ╟─1dece7d4-b4a4-4c1d-a5b2-81f1e14716c0
 # ╟─e5d38326-108b-4c4d-ad77-5be3597123c5
-# ╟─6fa2360d-cae0-4d1d-83fb-9cca1d471514
-# ╟─abc0d0ea-27e6-4bad-bc95-9d6539ab4f44
 # ╠═a10c2e29-aa43-4384-9cc9-ea156806a9ab
 # ╠═edefac7e-d9b7-4302-8b53-b451d8115498
 # ╟─9a9ac33c-9b1a-4f2c-a5ea-b2a1c5ec6463
@@ -3033,6 +3070,8 @@ version = "1.4.1+1"
 # ╟─1d29ad6c-f86a-4bb3-8986-c9288ae0b5f3
 # ╠═179946d9-40a9-4776-bd9f-911e87c8c9e7
 # ╟─854ea614-0bb6-4764-8fce-8d53a1e91819
+# ╟─bb5ec6d8-85b0-4cbd-b7bf-f259b3ed0ca1
+# ╟─1713a0fc-a039-428e-b565-194e47055596
 # ╟─a2cd17d9-6db1-41eb-b514-20d08ae10eff
 # ╟─a7a428a4-afb9-467b-82e5-8ddf6c6a9dbd
 # ╠═1479f3c8-4788-4a68-8d44-e1799059cbe1
@@ -3064,13 +3103,13 @@ version = "1.4.1+1"
 # ╠═77fe964c-5f42-47e1-958b-1667fa4ef586
 # ╟─97dce860-f311-4536-b3c5-2d9f23998140
 # ╟─4082c5c8-dafb-41ea-aa69-7bde33b7fd1a
-# ╟─75d602a7-177e-44e3-a9b1-a3deceec355f
+# ╠═75d602a7-177e-44e3-a9b1-a3deceec355f
 # ╟─e57f0e48-dc63-4870-a8dd-530e977d7c79
-# ╠═ddccad5c-f02f-4591-b1da-9365a868922e
+# ╟─ddccad5c-f02f-4591-b1da-9365a868922e
 # ╟─cfb1b551-125c-492c-9148-b02fc53cb454
-# ╠═cdeff58b-cc7f-47f8-b420-795a3a8c3f98
+# ╟─cdeff58b-cc7f-47f8-b420-795a3a8c3f98
 # ╟─c545b3b2-3a65-4083-b2ea-66381066237a
-# ╠═2f4cfe96-673a-4c57-84f4-957f15b28a69
+# ╟─2f4cfe96-673a-4c57-84f4-957f15b28a69
 # ╟─7e666c86-e7fb-43de-977a-c9793d1a701d
 # ╟─55f6b707-f2a3-460c-bb3d-7e6bd8865192
 # ╟─72a762ec-c62f-4fa3-b5e6-a9792f586962
@@ -3082,11 +3121,12 @@ version = "1.4.1+1"
 # ╟─8e7ebf75-19d4-43b6-b3eb-a680efc419cc
 # ╟─7e664b2a-c58a-4a76-9e0d-a4f433f0399d
 # ╟─02b47d2d-e23b-4710-83f1-9e1e294b00b5
+# ╠═d8118312-5f83-454f-8bec-0ac9b0a4b416
 # ╠═cee969d8-45a3-437b-9393-c1c8a2e271ba
 # ╠═2cbfd932-7144-47d1-8c92-9d58a0fb63ba
 # ╠═3cd957bd-303f-4761-94c8-a793ea135c48
-# ╠═d5ecb73d-3fd1-4602-866a-fe181d30b12d
+# ╟─d5ecb73d-3fd1-4602-866a-fe181d30b12d
 # ╟─6fb1ff6f-43d4-4011-a973-9b4bc4675380
-# ╠═f7bf05ef-591d-4bc0-a8d3-18c9dd0b4170
+# ╟─f7bf05ef-591d-4bc0-a8d3-18c9dd0b4170
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
