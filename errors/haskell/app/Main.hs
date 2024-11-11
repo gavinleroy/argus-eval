@@ -16,6 +16,12 @@ injectTimer app = injectResource app (Timer 0)
 
 
 -- NOTE: Type Checks
+-- Demonstrates that you can use custom systems that implement `System`
+addCustomSystem :: App -> App
+addCustomSystem app = addSystem app (CustomSystem ())
+
+
+-- NOTE: Type Checks
 -- Demonstrates that functions can have more than one argument
 addRunTimersSystem :: App -> App
 addRunTimersSystem app = addSystem app runMultipleTimers
@@ -58,9 +64,6 @@ addRunTimerSystem app = addSystem app runTimer
 --    |                    ^^^^^^^^^
 addBadSystem :: App -> App
 addBadSystem app = addSystem app "NotASystem"
-  where
-    addCustomSystem :: App -> App
-    addCustomSystem app = addSystem app (CustomSystem ())
 
 
 main :: IO ()
