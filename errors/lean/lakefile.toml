@@ -1,0 +1,10 @@
+name = "leanbevy"
+version = "0.1.0"
+defaultTargets = ["leanbevy"]
+
+[[lean_lib]]
+name = "Leanbevy"
+
+[[lean_exe]]
+name = "leanbevy"
+root = "Main"
