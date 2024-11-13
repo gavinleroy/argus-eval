@@ -1,7 +1,7 @@
 import Leanbevy
 
 structure CustomSystem (a: Type) where
-  v: a
+  v : a
 
 instance : System (CustomSystem Unit) where
 
