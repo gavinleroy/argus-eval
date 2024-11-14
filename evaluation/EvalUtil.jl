@@ -102,7 +102,7 @@ md"""
 """
 
 # ╔═╡ e772a2eb-382b-433b-b33f-f0c8a6091ccd
-argus_label(b::Bool) = if b "With Argus" else "Without Argus" end
+argus_label(b::Bool) = if b "Yes" else "No" end
 
 # ╔═╡ 19460ce4-ffb4-4c33-a5ef-9dc0d2783a91
 rw_label(b::Bool) = if b "Real" else "Synthetic" end

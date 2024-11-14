@@ -13,13 +13,14 @@
       in {
         devShells.default = with pkgs; pkgs.mkShell {
           buildInputs = [
-            # For evaluation notebook
             julia-bin
             python3
+            libertine
           ] ++ lib.optionals stdenv.isDarwin [
             darwin.apple_sdk.frameworks.SystemConfiguration
           ];
           PYTHON = python3;
+          LIBERTINE_PATH = "${pkgs.libertine}/share/fonts";
         };
 
         devShell = self.devShells.${system}.default;
