@@ -19,7 +19,7 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
 
-      - name: Build CV
+      - name: Build
         run: |
           cd evaluation
           nix develop --command ci-publish
