@@ -1,0 +1,32 @@
+name: update
+
+on:
+  push:
+    branches:
+      - "**"
+    tags-ignore:
+      - "v*"
+  pull_request:
+    branches:
+      - "**"
+
+jobs:
+  ghpages:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/flake-checker-action@main
+
+      - name: Build CV
+        run: |
+          cd evaluation
+          nix develop --command ci-publish
+
+      - uses: JamesIves/github-pages-deploy-action@v4.3.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: gh-pages
+          folder: ./evaluation
+          clean: true
